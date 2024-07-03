@@ -9,7 +9,7 @@ import GetTicketWbot from "./GetTicketWbot";
 const SetTicketMessagesAsRead = async (ticket: Ticket): Promise<void> => {
   await ticket.update({ unreadMessages: 0 });
   await cacheLayer.set(`contacts:${ticket.contactId}:unreads`, "0");
-  let companyid;
+  let companyId: number;
   try {
     const wbot = await GetTicketWbot(ticket);
 
@@ -21,20 +21,23 @@ const SetTicketMessagesAsRead = async (ticket: Ticket): Promise<void> => {
       },
       order: [["createdAt", "DESC"]]
     });
-     companyid = getJsonMessage[0]?.companyId;
+    companyId = getJsonMessage[0]?.companyId;
+
+    getJsonMessage.map(async m => {
+      const message: proto.IWebMessageInfo = JSON.parse(m.dataJson);
+      if (message.key) {
+        await (wbot as WASocket).readMessages([message.key]);
+      }
+    });
 
     if (getJsonMessage.length > 0) {
       const lastMessages: proto.IWebMessageInfo = JSON.parse(
-        JSON.stringify(getJsonMessage[0].dataJson)
+        getJsonMessage[0].dataJson
       );
-      const number = ticket.isGroup ? `${ticket.contact.number.substring(12,0)}-${ticket.contact.number.substring(12)}@g.us` : `${ticket.contact.number}@s.whatsapp.net`
-      if (lastMessages.key && lastMessages.key.fromMe === false) {
+      if (lastMessages?.key?.remoteJid && lastMessages.key.fromMe === false) {
         await (wbot as WASocket).chatModify(
           { markRead: true, lastMessages: [lastMessages] },
-          number
-          // `${ticket.contact.number}@${
-          //   ticket.isGroup ? "g.us" : "s.whatsapp.net"
-          // }`
+          `${lastMessages.key.remoteJid}`
         );
       }
     }
@@ -49,24 +52,22 @@ const SetTicketMessagesAsRead = async (ticket: Ticket): Promise<void> => {
       }
     );
   } catch (err) {
-    console.log(err);
-    logger.warn(
-      `Could not mark messages as read. Maybe whatsapp session disconnected? Err: ${err}`
+    logger.error(
+      { error: err as Error },
+      `Could not mark messages as read. Err: ${err?.message}`
     );
   }
 
   const io = getIO();
-  if (companyid){
-    io.to(`company-${companyid}-mainchannel`).emit(`company-${companyid}-ticket`, {
-      action: "updateUnread",
-      ticketId: ticket?.id
-    });
+  if (companyId) {
+    io.to(ticket.id.toString())
+      .to(`company-${companyId}-${ticket.status}`)
+      .to(`queue-${ticket.queueId}-${ticket.status}`)
+      .emit(`company-${companyId}-ticket`, {
+        action: "updateUnread",
+        ticketId: ticket.id
+      });
   }
-
-  io.to(ticket.status).to("notification").emit("ticket", {
-    action: "updateUnread",
-    ticketId: ticket.id
-  });
 };
 
 export default SetTicketMessagesAsRead;

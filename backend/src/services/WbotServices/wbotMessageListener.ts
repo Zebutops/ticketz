@@ -1,3 +1,4 @@
+/* eslint-disable prettier/prettier */
 import path, { join } from "path";
 import { promisify } from "util";
 import fs, { writeFile } from "fs";
@@ -107,7 +108,7 @@ const getBodyButton = (msg: proto.IWebMessageInfo): string => {
 
     return bodyMessage;
   }
-  
+
   return "";
 };
 
@@ -278,7 +279,7 @@ const downloadMedia = async (msg: proto.IWebMessageInfo) => {
         msg.message?.templateMessage?.hydratedTemplate?.imageMessage ||
         msg.message?.templateMessage?.hydratedFourRowTemplate?.imageMessage ||
         msg.message?.interactiveMessage?.header?.imageMessage;
-        
+
       if (message.directPath) {
         message.url = "";
       }
@@ -534,6 +535,10 @@ export const verifyEditedMessage = async (
   switch (editedType) {
     case "conversation": {
       editedText = msg.conversation
+      break;
+    }
+    case "extendedTextMessage": {
+      editedText = msg.extendedTextMessage.text;
       break;
     }
     case "imageMessage": {
@@ -808,7 +813,7 @@ const sendMenu = async (
 const startQueue = async (wbot: Session, ticket: Ticket, queue: Queue) => {
     const {companyId, contact} = ticket;
     let chatbot = false;
-    
+
     if (queue?.options) {
       chatbot = queue.options.length > 0;
     }
@@ -838,8 +843,8 @@ const startQueue = async (wbot: Session, ticket: Ticket, queue: Queue) => {
         !isNil(currentSchedule) &&
         (!currentSchedule || currentSchedule.inActivity === false)
       ) {
-
-        const body = formatBody(`${queue.outOfHoursMessage}\n\n*[ # ]* - Voltar ao Menu Principal`, ticket.contact);
+        const outOfHoursMessage = queue.outOfHoursMessage.trim() || "Estamos fora do horário de expediente";
+        const body = formatBody(`${outOfHoursMessage}\n\n*[ # ]* - Voltar ao Menu Principal`, ticket.contact);
         const sentMessage = await wbot.sendMessage(
           `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`, {
           text: body,
@@ -854,13 +859,15 @@ const startQueue = async (wbot: Session, ticket: Ticket, queue: Queue) => {
         return;
       }
 
-      const body = formatBody(`\u200e${queue.greetingMessage}`, ticket.contact);
-      const sentMessage = await wbot.sendMessage(
-        `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`, {
-        text: body,
+      if (queue.greetingMessage?.trim()) {
+        const body = formatBody(`\u200e${queue.greetingMessage.trim()}`, ticket.contact);
+        const sentMessage = await wbot.sendMessage(
+          `${contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`, {
+          text: body,
+        }
+        );
+        await verifyMessage(sentMessage, ticket, contact);
       }
-      );
-      await verifyMessage(sentMessage, ticket, contact);
 
       if (queue.mediaPath !== null && queue.mediaPath !== "") {
         const filePath = path.resolve("public", queue.mediaPath);
@@ -995,7 +1002,7 @@ const verifyQueue = async (
         break;
       case "text":
         botText();
-        break;      
+        break;
       default:
     }
   }
@@ -1023,12 +1030,12 @@ export const handleRating = async (
   const io = getIO();
   let rate: number | null = null;
 
-  if (msg?.message?.conversation) {
-    rate = parseInt(msg.message?.conversation, 10) || null;
+  if (msg?.message?.conversation || msg?.message?.extendedTextMessage) {
+    rate = parseInt(msg.message.conversation || msg.message.extendedTextMessage.text , 10) || null;
   }
 
   if (!Number.isNaN(rate) && Number.isInteger(rate) && !isNull(rate)) {
-    const { complationMessage } = await ShowWhatsAppService(
+    const whatsapp = await ShowWhatsAppService(
       ticket.whatsappId,
       ticket.companyId
     );
@@ -1048,6 +1055,8 @@ export const handleRating = async (
       userId: ticketTraking.userId,
       rate: finalRate,
     });
+
+    const complationMessage = whatsapp.complationMessage.trim() || "Atendimento finalizado";
     const body = formatBody(`\u200e${complationMessage}`, ticket.contact);
     await SendWhatsAppMessage({ body, ticket });
 
@@ -1086,7 +1095,6 @@ export const handleRating = async (
 };
 
 const handleChartbot = async (ticket: Ticket, msg: WAMessage, wbot: Session, dontReadTheFirstQuestion = false) => {
-
   const queue = await Queue.findByPk(ticket.queueId, {
     include: [
       {
@@ -1196,7 +1204,7 @@ const handleChartbot = async (ticket: Ticket, msg: WAMessage, wbot: Session, don
       );
 
       await verifyMessage(sendMsg, ticket, ticket.contact);
-      
+
       if (currentOption.exitChatbot) {
         await ticket.update({
           chatbot: false,
@@ -1213,7 +1221,7 @@ const handleChartbot = async (ticket: Ticket, msg: WAMessage, wbot: Session, don
       }
       return;
     }
-    
+
     if (currentOption.options.length > -1) {
       sendMenu(wbot, ticket, currentOption);
     }
@@ -1226,7 +1234,7 @@ const handleMessage = async (
   companyId: number
 ): Promise<void> => {
   if (!isValidMsg(msg)) return;
-  
+
   if (msg.message?.ephemeralMessage) {
     msg.message = msg.message.ephemeralMessage.message;
   }
@@ -1306,7 +1314,9 @@ const handleMessage = async (
       order: [["createdAt", "DESC"]],
     });
 
-    if (unreadMessages === 0 && whatsapp.complationMessage && formatBody(whatsapp.complationMessage, contact).trim().toLowerCase() === lastMessage?.body.trim().toLowerCase()) {
+    const complationMessage = whatsapp.complationMessage.trim() || "Atendimento finalizado";
+
+    if (unreadMessages === 0 && complationMessage && formatBody(complationMessage, contact).trim().toLowerCase() === lastMessage?.body.trim().toLowerCase()) {
       return;
     }
 
@@ -1315,7 +1325,7 @@ const handleMessage = async (
       const result = await FindOrCreateTicketService(contact, wbot.id!, unreadMessages, companyId, groupContact);
       return result;
     });
-  
+
     // voltar para o menu inicial
 
     if (bodyMessage === "#") {
@@ -1375,12 +1385,20 @@ const handleMessage = async (
 
     if (hasMedia) {
       await verifyMediaMessage(msg, ticket, contact);
+    } else if (msg.message?.editedMessage?.message?.protocolMessage?.editedMessage) {
+      // message edited by Whatsapp App
+      await verifyEditedMessage(msg.message.editedMessage.message.protocolMessage.editedMessage, ticket, msg.message.editedMessage.message.protocolMessage.key.id);
     } else if (msg.message?.protocolMessage?.editedMessage) {
+      // message edited by Whatsapp Web
       await verifyEditedMessage(msg.message.protocolMessage.editedMessage, ticket, msg.message.protocolMessage.key.id);
     } else if (msg.message?.protocolMessage?.type === 0) {
       await verifyDeleteMessage(msg.message.protocolMessage, ticket);
     } else {
       await verifyMessage(msg, ticket, contact);
+    }
+    
+    if (contact.disableBot) {
+      return;
     }
 
     const currentSchedule = await VerifyCurrentSchedule(companyId);
@@ -1402,7 +1420,7 @@ const handleMessage = async (
           !isNil(currentSchedule) &&
           (!currentSchedule || currentSchedule.inActivity === false)
         ) {
-          const body = `${whatsapp.outOfHoursMessage}`;
+          const body = `${whatsapp.outOfHoursMessage.trim() || "Estamos fora do horário de expediente"}`;
 
           const debouncedSentMessage = debounce(
             async () => {
@@ -1448,15 +1466,14 @@ const handleMessage = async (
 
           if (
             scheduleType.value === "queue" &&
-            queue.outOfHoursMessage !== null &&
-            queue.outOfHoursMessage !== "" &&
             !isNil(schedule)
           ) {
             const startTime = moment(schedule.startTime, "HH:mm");
             const endTime = moment(schedule.endTime, "HH:mm");
 
             if (now.isBefore(startTime) || now.isAfter(endTime)) {
-              const body = `${queue.outOfHoursMessage}`;
+              const outOfHoursMessage = queue.outOfHoursMessage?.trim() || "Estamos fora do horário de expediente";
+              const body = `${outOfHoursMessage}`;
               const debouncedSentMessage = debounce(
                 async () => {
                   await wbot.sendMessage(
@@ -1536,15 +1553,14 @@ const handleMessage = async (
 
         if (
           scheduleType.value === "queue" &&
-          queue.outOfHoursMessage !== null &&
-          queue.outOfHoursMessage !== "" &&
           !isNil(schedule)
         ) {
           const startTime = moment(schedule.startTime, "HH:mm");
           const endTime = moment(schedule.endTime, "HH:mm");
 
           if (now.isBefore(startTime) || now.isAfter(endTime)) {
-            const body = queue.outOfHoursMessage;
+            const outOfHoursMessage = queue.outOfHoursMessage?.trim() || "Estamos fora do horário de expediente";
+            const body = outOfHoursMessage;
             const debouncedSentMessage = debounce(
               async () => {
                 await wbot.sendMessage(
@@ -1592,7 +1608,7 @@ const handleMessage = async (
               `${ticket.contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"
               }`,
               {
-                text: whatsapp.greetingMessage
+                text: formatBody(whatsapp.greetingMessage, contact, ticket)
               }
             );
           },

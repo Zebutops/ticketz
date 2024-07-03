@@ -25,6 +25,7 @@ import MainListItems from "./MainListItems";
 import NotificationsPopOver from "../components/NotificationsPopOver";
 import NotificationsVolume from "../components/NotificationsVolume";
 import UserModal from "../components/UserModal";
+import AboutModal from "../components/AboutModal";
 import { AuthContext } from "../context/Auth/AuthContext";
 import BackdropLoading from "../components/BackdropLoading";
 import DarkMode from "../components/DarkMode";
@@ -37,17 +38,16 @@ import { SocketContext } from "../context/Socket/SocketContext";
 import ChatPopover from "../pages/Chat/ChatPopover";
 
 import { useDate } from "../hooks/useDate";
+import useAuth from "../hooks/useAuth.js";
 
 import ColorModeContext from "../layout/themeContext";
 import Brightness4Icon from '@material-ui/icons/Brightness4';
 import Brightness7Icon from '@material-ui/icons/Brightness7';
 import LanguageIcon from '@material-ui/icons/Language';
 import { getBackendURL } from "../services/config";
+import NestedMenuItem from "material-ui-nested-menu-item";
 
 const drawerWidth = 240;
-
-const logo = "/vector/logo.svg";
-const logoDark = "/vector/logo-dark.svg";
 
 const useStyles = makeStyles((theme) => ({
   root: {
@@ -159,7 +159,7 @@ const useStyles = makeStyles((theme) => ({
     width: "192px",
     maxHeight: "72px",
     logo: theme.logo,
-    content: "url(" + ((theme.appLogoLight || theme.appLogoDark) ? getBackendURL()+"/public/"+  (theme.mode === "light" ? theme.appLogoLight || theme.appLogoDark : theme.appLogoDark || theme.appLogoLight  )   : (theme.mode === "light" ? logo : logoDark)) + ")"
+    content: "url(" + (theme.mode === "light" ? theme.calculatedLogoLight() : theme.calculatedLogoDark()) + ")"
   },
   hideLogo: {
 	display: "none",
@@ -169,6 +169,7 @@ const useStyles = makeStyles((theme) => ({
 const LoggedInLayout = ({ children, themeToggle }) => {
   const classes = useStyles();
   const [userModalOpen, setUserModalOpen] = useState(false);
+  const [aboutModalOpen, setAboutModalOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [languageOpen, setLanguageOpen] = useState(false);
@@ -183,6 +184,9 @@ const LoggedInLayout = ({ children, themeToggle }) => {
   const greaterThenSm = useMediaQuery(theme.breakpoints.up("sm"));
 
   const [currentLanguage, setCurrentLanguage] = useState(i18n.language);
+
+  const { getCurrentUserInfo } = useAuth();
+  const [currentUser, setCurrentUser] = useState({});
 
   const [volume, setVolume] = useState(localStorage.getItem("volume") || 1);
 
@@ -242,6 +246,15 @@ const LoggedInLayout = ({ children, themeToggle }) => {
       setDrawerOpen(true);
     }
   }, []);
+  
+  useEffect(() => {
+    getCurrentUserInfo().then(
+      (user) => {
+        setCurrentUser(user);
+      }
+    );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (document.body.offsetWidth < 600) {
@@ -285,11 +298,6 @@ const LoggedInLayout = ({ children, themeToggle }) => {
     setMenuOpen(true);
   };
 
-  const handleLanguageMenu = (event) => {
-    setAnchorEl(event.currentTarget);
-    setLanguageOpen(true);
-  };
-
   const handleCloseProfileMenu = () => {
     setAnchorEl(null);
     setMenuOpen(false);
@@ -305,6 +313,11 @@ const LoggedInLayout = ({ children, themeToggle }) => {
     handleCloseProfileMenu();
   };
 
+  const handleOpenAboutModal = () => {
+    setAboutModalOpen(true);
+    handleCloseProfileMenu();
+  };
+
   const handleClickLogout = () => {
     handleCloseProfileMenu();
     handleLogout();
@@ -315,10 +328,6 @@ const LoggedInLayout = ({ children, themeToggle }) => {
       setDrawerOpen(false);
     }
   };
-
-  const handleRefreshPage = () => {
-    window.location.reload(false);
-  }
 
   const handleMenuItemClick = () => {
     const { innerWidth: width } = window;
@@ -370,6 +379,10 @@ const LoggedInLayout = ({ children, themeToggle }) => {
         onClose={() => setUserModalOpen(false)}
         userId={user?.id}
       />
+      <AboutModal
+        open={aboutModalOpen}
+        onClose={() => setAboutModalOpen(false)}
+      />
       <AppBar
         position="absolute"
         className={clsx(classes.appBar, drawerOpen && classes.appBarShift)}
@@ -407,22 +420,10 @@ const LoggedInLayout = ({ children, themeToggle }) => {
             )}
           </Typography>
 
-          <IconButton edge="start" onClick={toggleColorMode}>
-            {theme.mode === 'dark' ? <Brightness7Icon style={{ color: "white" }} /> : <Brightness4Icon style={{ color: "white" }} />}
-          </IconButton>
-
           <NotificationsVolume
             setVolume={setVolume}
             volume={volume}
           />
-
-          <IconButton
-            onClick={handleRefreshPage}
-            aria-label={i18n.t("mainDrawer.appBar.refresh")}
-            color="inherit"
-          >
-            <CachedIcon style={{ color: "white" }} />
-          </IconButton>
 
           {user.id && <NotificationsPopOver volume={volume} />}
 
@@ -431,16 +432,6 @@ const LoggedInLayout = ({ children, themeToggle }) => {
           <ChatPopover />
 
           <div>
-            <IconButton
-              aria-label="current language"
-              aria-controls="menu-language"
-              aria-haspopup="true"
-              onClick={handleLanguageMenu}
-              variant="contained"
-              style={{ color: "white" }}
-            >
-              <LanguageIcon />
-            </IconButton>
             <Menu
               id="language-appbar"
               anchorEl={anchorEl}
@@ -495,6 +486,24 @@ const LoggedInLayout = ({ children, themeToggle }) => {
             >
               <MenuItem onClick={handleOpenUserModal}>
                 {i18n.t("mainDrawer.appBar.user.profile")}
+              </MenuItem>
+              <MenuItem onClick={toggleColorMode}>
+                {theme.mode === 'dark' ? i18n.t("mainDrawer.appBar.user.lightmode") : i18n.t("mainDrawer.appBar.user.darkmode")}
+              </MenuItem>
+              <NestedMenuItem
+                label={i18n.t("mainDrawer.appBar.user.language")}
+                parentMenuOpen={menuOpen}
+              >
+                {
+                  Object.keys(messages).map((m) => (
+                    <MenuItem onClick={() => handleChooseLanguage(m)}>
+                      {messages[m].translations.mainDrawer.appBar.i18n.language}
+                    </MenuItem>
+                  ))
+                }
+              </NestedMenuItem>
+              <MenuItem onClick={handleOpenAboutModal}>
+                {i18n.t("about.aboutthe")} {currentUser?.super ? "ticketz" : theme.appName}
               </MenuItem>
               <MenuItem onClick={handleClickLogout}>
                 {i18n.t("mainDrawer.appBar.user.logout")}

@@ -33,9 +33,7 @@ import toastError from "../../errors/toastError";
 import ReCAPTCHA from "react-google-recaptcha";
 import config from "../../services/config";
 import useSettings from "../../hooks/useSettings";
-
-const logo = "/vector/logo.svg";
-const logoDark = "/vector/logo-dark.svg";
+import { getBackendURL } from "../../services/config";
 
 const Copyright = () => {
 	return (
@@ -68,6 +66,13 @@ const useStyles = makeStyles(theme => ({
 	submit: {
 		margin: theme.spacing(3, 0, 2),
 	},
+	
+  logoImg: {
+    width: "100%",
+    margin: "0 auto",
+    content: "url(" + (theme.mode === "light" ? theme.calculatedLogoLight() : theme.calculatedLogoDark()) + ")"
+  }
+	
 }));
 
 const UserSchema = Yup.object().shape({
@@ -116,11 +121,11 @@ const SignUp = () => {
 	};
 
 	const [plans, setPlans] = useState([]);
-	const { list: listPlans } = usePlans();
+	const { listPublic: listPublicPlans } = usePlans();
 
 	useEffect(() => {
 		async function fetchData() {
-			const list = await listPlans();
+			const list = await listPublicPlans();
 			setPlans(list);
 		}
 		fetchData();
@@ -138,9 +143,9 @@ const SignUp = () => {
 		<Container component="main" maxWidth="xs">
 			<CssBaseline />
 			<div className={classes.paper}>
-				<div>
-					<img style={{ margin: "0 auto", height: "80px", width: "100%" }} src={theme.mode === "light" ? logo : logoDark} alt="Whats" />
-				</div>
+        <div>
+          <img className={classes.logoImg} />
+        </div>
 				{/*<Typography component="h1" variant="h5">
 					{i18n.t("signup.title")}
 				</Typography>*/}
